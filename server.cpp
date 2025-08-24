@@ -65,7 +65,6 @@ void append_json_file(const std::string& filename, const json& new_object){
         j = json::array();
     }
     j.push_back(new_object);
-
     write_json_file(filename, j);
 }
 
@@ -109,6 +108,33 @@ const std::string handle_GET(std::string route){
     }
 }
 
+const std::string handle_POST(std::string route, json payload) {
+    if (route == "/database"){
+        if (payload.empty()){
+            payload = {{"error", "The request body is empty. A POST request requires a payload."}};
+            return 
+                "HTTP/1.1 400 Bad Request\r\n"
+                "Content-Type: application/json\r\n"
+                "Connection: close\r\n\r\n" + 
+                payload.dump();
+        } else {
+            append_json_file("database.json", payload);
+            return 
+                "HTTP/1.1 201 Created\r\n"
+                "Content-Type: application/json\r\n"
+                "Location: /database\r\n"
+                "Connection: close\r\n\r\n" + 
+                payload.dump();
+        }
+    } else {
+        return 
+            "HTTP/1.1 404 Not Found\r\n"
+            "Content-Type: application/json\r\n"
+            "Connection: close\r\n\r\n"
+            "<html><body><h1>404 Not Found</h1></body></html>";
+    }   
+}
+
 // Code for handling requests to the server
 void parseRequest(int client_socket){
     // used to measure time
@@ -124,10 +150,38 @@ void parseRequest(int client_socket){
         std::string request_type = "";
         std::string route = "";
         ss >> request_type; ss >> route;
+        bool found_body = false;
+        std::string line;
+        std::string body;
+        json payload;
+        while (std::getline(ss, line)){
+            if (line.empty() || line == "\r"){
+                found_body = true;
+                break;
+            }
+        }
+
+        if (found_body){
+            std::stringstream reqbody;
+            reqbody << ss.rdbuf();
+            body = reqbody.str();
+
+            try {
+                payload = json::parse(body);
+                
+            } catch (const json::parse_error& e){
+                std::cerr << "JSON parsing error: " << e.what() << '\n';
+
+            }
+        } else {
+            std::cerr << "Error: Could not find request body." << '\n';
+        }
         std::string response;
 
         if (request_type == "GET"){
             response = handle_GET(route);
+        } else if (request_type == "POST"){
+            response = handle_POST(route, payload);
         }
 
 
