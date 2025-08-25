@@ -19,6 +19,55 @@
 
 using json = nlohmann::json;
 
+// ------------------ Response message helper functions ------------------
+
+const std::string HTML_404(){
+    return 
+        "HTTP/1.1 404 Not Found\r\n"
+        "Content-Type: application/json\r\n"
+        "Connection: keep-alive\r\n\r\n"
+        "<html><body><h1>404 Not Found</h1></body></html>"; 
+}
+
+const std::string JSON_404(json payload){
+    return 
+        "HTTP/1.1 404 Not Found\r\n"
+        "Content-Type: application/json\r\n"
+        "Connection: keep-alive\r\n\r\n" + 
+         payload.dump();
+
+}
+
+const std::string JSON_200(json payload){
+    return
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: application/json\r\n"
+        "Connection: keep-alive\r\n\r\n" + 
+        payload.dump();   
+}
+
+const std::string JSON_400(json payload){
+    return
+        "HTTP/1.1 400 Bad Request\r\n"
+        "Content-Type: application/json\r\n"
+        "Connection: keep-alive\r\n\r\n" + 
+        payload.dump();
+}
+const std::string JSON_201(json payload){
+    return
+        "HTTP/1.1 201 Created\r\n"
+        "Content-Type: application/json"
+        "Location: /database\r\n"
+        "Connection: keep-alive\r\n\r\n" + 
+        payload.dump();
+}
+
+const std::string STATUS_204(){
+    return 
+        "HTTP/1.1 204 No Content\r\n"
+        "Connection: keep-alive";
+}
+
 // ------------------ JSON Helper Functions ------------------
 
 json read_json_file(const std::string& filename) {
@@ -65,7 +114,6 @@ void append_json_file(const std::string& filename, const json& new_object){
         j = json::array();
     }
     j.push_back(new_object);
-
     write_json_file(filename, j);
 }
 
@@ -76,7 +124,7 @@ const std::string handle_GET(std::string route){
         const char* response = 
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: text/html\r\n"
-            "Connection: close\r\n"
+            "Connection: keep-alive\r\n"
             "\r\n"
             "<html><body><h1> Hello from my C++ HTTP server!</h1></body></html>";
         return response;
@@ -85,35 +133,144 @@ const std::string handle_GET(std::string route){
         std::string response;
         if (j.empty()){
             j = { {"error", "Database does not exist."} };
-            response = 
-            "HTTP/1.1 404 Not Found\r\n"
-            "Content-Type: application/json\r\n"
-            "Connection: close\r\n\r\n" + 
-            j.dump();
+            response = JSON_404(j);
         } else {
-            response = 
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: application/json\r\n"
-            "Connection: close\r\n\r\n" + 
-            j.dump();
+            response = JSON_200(j);
         }
         return response;
 
     } else {
-        return 
-            "HTTP/1.1 404 Not Found\r\n"
-            "Content-Type: text/html\r\n"
-            "Connection: close\r\n"
-            "\r\n"
-            "<html><body><h1>404 Not Found</h1></body></html>";
+        return HTML_404();
     }
 }
+
+const std::string handle_POST(std::string route, json payload) {
+    if (route == "/database"){
+        if (payload.empty()){
+            payload = {{"error", "The request body is empty. A POST request requires a payload."}};
+            return JSON_400(payload);
+        } else if (payload.contains("id")) {
+            payload = {{"error", "The request body contains an id. IDs are automatically generated"}};
+            return JSON_400(payload);
+        } 
+        else {
+            json j = read_json_file("database.json");
+            int curr_id = 1;
+
+            if (j.is_array() && !j.empty()){
+                int last_id = j.back()["id"];
+                curr_id = last_id + 1;
+            } 
+            payload["id"] = curr_id;
+            append_json_file("database.json", payload);
+            return JSON_201(payload);
+        }
+    } else {
+        return HTML_404();
+    }   
+}
+
+const std::string handle_PUT(std::string route, json payload){
+    if (route == "/database") {
+        
+        if (!payload.contains("id")){
+            payload  = {{"error", "An id is needed for PUT requests."}};
+            return JSON_400(payload);
+        }
+        int target_id = payload["id"];
+        int index = 0;
+        bool found = false;
+        json j = read_json_file("database.json");
+        for (const auto& element : j){
+            if (element.contains("id") && element.at("id") == target_id){
+                found = true;
+                break;
+            }
+            index++;
+        }
+        if (found){
+            j[index] = payload;
+            write_json_file("database.json", j);
+        } else {
+            payload = {{"error", "This id does not exist in the database"}};
+            return JSON_400(payload);
+        }
+        return JSON_200(payload);
+
+    } else {
+        return HTML_404();
+    }
+}
+
+const std::string handle_PATCH(std::string route, json payload){
+    if (route == "/database"){
+        if (!payload.contains("id")){
+            payload = {{"error", "An id is required for PATCH requests."}};
+            return JSON_400(payload);
+        }
+        int target_id = payload["id"];
+        int index = 0;
+        bool found = false;
+        json j = read_json_file("database.json");
+        for (const auto& element : j) {
+            if (element.contains("id") && element.at("id") == target_id){
+                found = true;
+                break;
+            }
+            index++;
+        }
+        if (found){
+            for (const auto& item : payload.items()){
+                 j[index][item.key()] = payload[item.key()];
+                 write_json_file("database.json", j);
+            }
+        } else {
+            payload = {{"error", "This id does not exist in the database."}};
+            return JSON_400(payload);
+        }
+        payload = j[index];
+        return JSON_200(payload);
+    } else {
+        return HTML_404();
+    }
+}
+
+const std::string handle_DELETE(std::string route, json payload){
+    if (route == "/database"){
+        
+        if (!payload.contains("id")){
+            payload = {{"error", "You need to include an id for this DELETE request."}};
+            return JSON_400(payload);
+        }
+        int target_id = payload["id"];
+        int index = 0;
+        bool found = false;
+        json j = read_json_file("database.json");
+        for (const auto& element : j){
+            if (element.contains("id") && element.at("id") == target_id){
+                found = true;
+                break;
+            }
+            index++;
+        }
+        if (found){
+            j.erase(j.begin() + index);
+            write_json_file("database.json", j);
+        } else{
+            payload = {{"error", "This id does not exist in the database."}};
+            return JSON_400(payload);
+        }
+        return STATUS_204();
+    } else {
+        return HTML_404();
+    }
+}
+
 
 // Code for handling requests to the server
 void parseRequest(int client_socket){
     // used to measure time
     auto start = std::chrono::high_resolution_clock::now();
-
     // buffer is used to store the incoming request, 4096 characters is usually enough to store all requests
     char buffer[4096];
     int bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0); // receives the request from the user and stores it into the buffer
@@ -124,10 +281,44 @@ void parseRequest(int client_socket){
         std::string request_type = "";
         std::string route = "";
         ss >> request_type; ss >> route;
+        bool found_body = false;
+        std::string line;
+        std::string body;
+        json payload;
+        while (std::getline(ss, line)){
+            if (line.empty() || line == "\r"){
+                found_body = true;
+                break;
+            }
+        }
+
+        if (found_body){
+            std::stringstream reqbody;
+            reqbody << ss.rdbuf();
+            body = reqbody.str();
+
+            try {
+                payload = json::parse(body);
+                
+            } catch (const json::parse_error& e){
+                std::cerr << "JSON parsing error: " << e.what() << '\n';
+
+            }
+        } else {
+            std::cerr << "Error: Could not find request body." << '\n';
+        }
         std::string response;
 
         if (request_type == "GET"){
             response = handle_GET(route);
+        } else if (request_type == "POST"){
+            response = handle_POST(route, payload);
+        } else if (request_type == "DELETE") {
+            response = handle_DELETE(route, payload);
+        } else if (request_type == "PUT") {
+            response = handle_PUT(route, payload);
+        } else if (request_type == "PATCH"){
+            response = handle_PATCH(route, payload);
         }
 
 
