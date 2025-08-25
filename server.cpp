@@ -13,6 +13,8 @@
 #include "json.hpp"
 #include <fstream>
 #include <ctime>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 #include "threadpool.h"
 
 
@@ -336,6 +338,13 @@ void parseRequest(int client_socket){
 
 void setupSocket(int portNumber) {
     
+    SSL_library_init();
+    SSL_load_error_strings();
+    OpenSSL_add_all_algorithms();
+
+    SSL_CTX* ctx = SSL_CTX_new(TLS_server_method());
+    SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+
     // create the serverside (my socket)
     int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket == -1) {
