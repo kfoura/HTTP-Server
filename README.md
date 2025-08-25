@@ -1,12 +1,13 @@
 # HTTP-Server
 ## C++ HTTP Server
 
-This project is a simple multithreaded HTTP server implemented in C++. It supports basic RESTful operations (GET, POST, DELETE) on a JSON-based database, using a thread pool for concurrent request handling.
+This project is a simple multithreaded HTTP server implemented in C++. It supports basic RESTful operations (GET, POST, PUT, PATCH, DELETE) on a JSON-based database, using a thread pool for concurrent request handling.
 
 ### Features
-- Handles HTTP GET, POST, and DELETE requests
+- Handles HTTP GET, POST, PUT, PATCH, and DELETE requests
 - Serves static HTML and JSON responses
 - Stores and manages data in a `database.json` file
+- Supports full and partial updates to database entries
 - Logs all requests to `requests.json`
 - Uses a thread pool for concurrent client handling
 - Minimal dependencies (uses [nlohmann/json](https://github.com/nlohmann/json) for JSON parsing)
@@ -26,6 +27,29 @@ Adds a new object to the database. The request body must be a JSON object (witho
 {
 	"name": "John Doe",
 	"email": "john@example.com"
+}
+```
+
+#### `PUT /database`
+Replaces an existing object in the database by `id`. The request body must be a JSON object containing the `id` field and all fields to be set.
+
+**Example request body:**
+```json
+{
+	"id": 1,
+	"name": "Jane Doe",
+	"email": "jane@example.com"
+}
+```
+
+#### `PATCH /database`
+Partially updates an existing object in the database by `id`. The request body must be a JSON object containing the `id` field and only the fields to update.
+
+**Example request body:**
+```json
+{
+	"id": 1,
+	"email": "newemail@example.com"
 }
 ```
 
@@ -66,10 +90,11 @@ The server listens on port 8080 by default.
 - `database.json` — JSON database (auto-created/updated)
 - `requests.json` — Log of all HTTP requests
 
+
 ### Notes
 - The server is for educational/demo purposes and is not production-ready.
 - Error handling is basic; malformed requests may not be fully supported.
-- Only one route (`/database`) is supported for POST and DELETE.
+- Only one route (`/database`) is supported for POST, PUT, PATCH, and DELETE.
 
 ---
 Feel free to extend the server with more features or endpoints!
