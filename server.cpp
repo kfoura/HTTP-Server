@@ -270,12 +270,12 @@ const std::string handle_DELETE(std::string route, json payload){
 
 
 // Code for handling requests to the server
-void parseRequest(int client_socket){
+void parseRequest(int client_socket, SSL* ssl){
     // used to measure time
     auto start = std::chrono::high_resolution_clock::now();
     // buffer is used to store the incoming request, 4096 characters is usually enough to store all requests
     char buffer[4096];
-    int bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0); // receives the request from the user and stores it into the buffer
+    int bytes_received = SSL_read(ssl, buffer, sizeof(buffer) - 1); // receives the request from the user and stores it into the buffer
     if (bytes_received > 0) {
         buffer[bytes_received] = '\0'; // ends the buffer with the null terminator
         std::cout << "\nRequest: " << buffer << '\n';
@@ -324,7 +324,7 @@ void parseRequest(int client_socket){
         }
 
 
-        send(client_socket, response.c_str(), strlen(response.c_str()), 0); // returns this response 
+        SSL_write(ssl, response.c_str(), response.size()); // returns this response 
         std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         append_json_file("requests.json", {{"method", request_type}, {"route", route}, {"timestamp", std::ctime(&now)}});
 
@@ -332,7 +332,8 @@ void parseRequest(int client_socket){
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
     std::cout << "This request took " << duration.count() << " microseconds to process." << '\n';
-
+    SSL_shutdown(ssl);
+    SSL_free(ssl);
     close(client_socket);
 }
 
@@ -344,7 +345,12 @@ void setupSocket(int portNumber) {
 
     SSL_CTX* ctx = SSL_CTX_new(TLS_server_method());
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
-
+    SSL_CTX_use_certificate_file(ctx, "cert.pem", SSL_FILETYPE_PEM);
+    SSL_CTX_use_PrivateKey_file(ctx, "key.pem", SSL_FILETYPE_PEM);
+    if (!SSL_CTX_check_private_key(ctx)){
+        std::cerr << "Private Key check failed." << '\n';
+        return;
+    }
     // create the serverside (my socket)
     int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket == -1) {
@@ -375,12 +381,20 @@ void setupSocket(int portNumber) {
     while (true){
         // accept requests
         int client_socket = accept(serverSocket, nullptr, nullptr);
+        SSL* ssl = SSL_new(ctx);
+        SSL_set_fd(ssl, client_socket);
+        int ok = SSL_accept(ssl);
+        if (ok <= 0) {
+            SSL_free(ssl);
+            close(client_socket);
+            continue;
+        }
         if (client_socket == -1){
             std::cerr << "Accept failed" << '\n';
             continue;
         }
-        pool.enqueue([client_socket] {
-            parseRequest(client_socket);
+        pool.enqueue([client_socket, ssl] {
+            parseRequest(client_socket, ssl);
         });
     }
 
