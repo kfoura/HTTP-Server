@@ -75,7 +75,7 @@ const std::string handle_GET(std::string route){
         const char* response = 
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: text/html\r\n"
-            "Connection: close\r\n"
+            "Connection: keep-alive\r\n"
             "\r\n"
             "<html><body><h1> Hello from my C++ HTTP server!</h1></body></html>";
         return response;
@@ -87,13 +87,13 @@ const std::string handle_GET(std::string route){
             response = 
             "HTTP/1.1 404 Not Found\r\n"
             "Content-Type: application/json\r\n"
-            "Connection: close\r\n\r\n" + 
+            "Connection: keep-alive\r\n\r\n" + 
             j.dump();
         } else {
             response = 
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: application/json\r\n"
-            "Connection: close\r\n\r\n" + 
+            "Connection: keep-alive\r\n\r\n" + 
             j.dump();
         }
         return response;
@@ -102,7 +102,7 @@ const std::string handle_GET(std::string route){
         return 
             "HTTP/1.1 404 Not Found\r\n"
             "Content-Type: text/html\r\n"
-            "Connection: close\r\n"
+            "Connection: keep-alive\r\n"
             "\r\n"
             "<html><body><h1>404 Not Found</h1></body></html>";
     }
@@ -115,31 +115,91 @@ const std::string handle_POST(std::string route, json payload) {
             return 
                 "HTTP/1.1 400 Bad Request\r\n"
                 "Content-Type: application/json\r\n"
-                "Connection: close\r\n\r\n" + 
+                "Connection: keep-alive\r\n\r\n" + 
                 payload.dump();
-        } else {
+        } else if (payload.contains("id")) {
+            payload = {{"error", "The request body contains an id. IDs are automatically generated"}};
+            return
+                "HTTP/1.1 400 Bad Request\r\n"
+                "Content-Type: application/json\r\n"
+                "Connection: keep-alive\r\n\r\n" + 
+                payload.dump();
+        } 
+        else {
+            json j = read_json_file("database.json");
+            int curr_id = 1;
+
+            if (j.is_array() && !j.empty()){
+                int last_id = j.back()["id"];
+                curr_id = last_id + 1;
+            } 
+            payload["id"] = curr_id;
             append_json_file("database.json", payload);
             return 
                 "HTTP/1.1 201 Created\r\n"
-                "Content-Type: application/json\r\n"
+                "Content-Type: application/json\r\n" 
                 "Location: /database\r\n"
-                "Connection: close\r\n\r\n" + 
+                "Connection: keep-alive\r\n\r\n" + 
                 payload.dump();
         }
     } else {
         return 
             "HTTP/1.1 404 Not Found\r\n"
             "Content-Type: application/json\r\n"
-            "Connection: close\r\n\r\n"
+            "Connection: keep-alive\r\n\r\n"
             "<html><body><h1>404 Not Found</h1></body></html>";
     }   
 }
+
+const std::string handle_DELETE(std::string route, json payload){
+    if (route == "/database"){
+        json j = read_json_file("database.json");
+        if (!payload.contains("id")){
+            payload = {{"error", "You need to include an id for this DELETE request."}};
+            return 
+                "HTTP/1.1 400 Bad Request\r\n"
+                "Content-Type: application/json\r\n"
+                "Connection: keep-alive\r\n\r\n" + 
+                payload.dump();
+        }
+        int target_id = payload["id"];
+        int index = 0;
+        bool found = false;
+        for (const auto& element : j){
+            if (element.contains("id") && element.at("id") == target_id){
+                found = true;
+                break;
+            }
+            index++;
+        }
+        if (found){
+            j.erase(j.begin() + index);
+            write_json_file("database.json", j);
+        } else{
+            payload = {{"error", "This id does not exist in the database."}};
+            return
+                "HTTP/1.1 400 Bad Request\r\n"
+                "Content-Type: application/json\r\n"
+                "Connection: keep-alive\r\n\r\n" +
+                payload.dump();
+        }
+        return 
+            "HTTP/1.1 204 No Content\r\n"
+            "Connection: keep-alive\r\n\r\n";
+    } else {
+        return 
+            "HTTP/1.1 404 Not Found\r\n"
+            "Content-Type: text/html\r\n"
+            "Connection: keep-alive\r\n\r\n"
+            "<html><body><h1>404 Not Found</h1></body></html>";
+    }
+}
+
 
 // Code for handling requests to the server
 void parseRequest(int client_socket){
     // used to measure time
     auto start = std::chrono::high_resolution_clock::now();
-
     // buffer is used to store the incoming request, 4096 characters is usually enough to store all requests
     char buffer[4096];
     int bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0); // receives the request from the user and stores it into the buffer
@@ -182,6 +242,8 @@ void parseRequest(int client_socket){
             response = handle_GET(route);
         } else if (request_type == "POST"){
             response = handle_POST(route, payload);
+        } else if (request_type == "DELETE") {
+            response = handle_DELETE(route, payload);
         }
 
 
